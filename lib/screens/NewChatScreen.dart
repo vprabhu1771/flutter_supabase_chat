@@ -26,6 +26,51 @@ class _NewChatScreenState extends State<NewChatScreen> {
     });
   }
 
+  void _startChat(String receiverId, String receiverEmail) async {
+    final currentUser = supabase.auth.currentUser?.id;
+    if (currentUser == null) return;
+
+    // Check if conversation exists
+    final existingConversation = await supabase
+        .from('participants')
+        .select('conversation_id')
+        .eq('user_id', currentUser)
+        .or('user_id.eq.$receiverId')
+        .maybeSingle();
+
+    String conversationId;
+
+    if (existingConversation != null) {
+      conversationId = existingConversation['conversation_id'];
+    } else {
+      // Create new conversation
+      final conversation = await supabase.from('conversations').insert({
+        'is_group': false,
+        // 'name': receiverEmail
+      }).select().single();
+
+      conversationId = conversation['id'];
+
+      // Add participants
+      await supabase.from('participants').insert([
+        {'conversation_id': conversationId, 'user_id': currentUser},
+        {'conversation_id': conversationId, 'user_id': receiverId},
+      ]);
+    }
+
+    // Navigate to chat detail screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatDetailScreen(
+          conversationId: conversationId,
+          receiverEmail: receiverEmail,
+        ),
+      ),
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -46,37 +91,30 @@ class _NewChatScreenState extends State<NewChatScreen> {
               // Prevent showing the current user in the list
               if (user['id'] == currentUser) return SizedBox.shrink();
 
-              // Check if user has image_path in their user_metadata
-              final avatarUrl = user['user_metadata'] != null
-                  ? user['user_metadata']['image_path']
-                  : null;
+              // Extract user metadata safely
+              // final userMetadata = user['user_metadata'] as Map<String, dynamic>? ?? {};
+
+              // print(user.toString());
+
+              final avatarUrl = user['image_path'] as String? ??
+                  'https://www.gravatar.com/avatar/${user['email'].hashCode}?d=identicon';
 
               return ListTile(
                 title: Text(user['email']),
                 subtitle: Text(user['phone'] ?? 'No phone number'),
                 leading: CircleAvatar(
-                  backgroundImage: avatarUrl != null
-                      ? NetworkImage(avatarUrl)
-                      : NetworkImage('https://gravatar.com/avatar/${user['email']}'),
+                  backgroundImage: NetworkImage(avatarUrl),
                 ),
                 onTap: () {
-                  // Navigate to ChatDetailScreen with the selected user
-                  // Navigator.pushNamed(context, '/chat_detail', arguments: {
-                  //   'receiverId': user['id'],
-                  //   'receiverEmail': user['email'],
-                  //   'receiverPhone': user['phone'],
-                  // });
 
                   print(user['id']);
                   print(user['email']);
                   print(user['phone']);
 
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => ChatDetailScreen(receiverId: user['id'], receiverEmail: user['email'],),
-                    ),
-                  );
+                  // Navigate to ChatDetailScreen with the selected user
+                  _startChat(user['id'], user['email']);
+
+
                 },
               );
             },
